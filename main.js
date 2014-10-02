@@ -7,6 +7,37 @@ var _endpointCache;
 var _authCache;
 
 module.exports = {
+    request: function (endpoint, method, expects, path, body) {
+        return Q.spread([this.getEndpoints(), this.getAuthToken()], function(endpoints, token) {
+            return qhttp.request({
+                method: method,
+                url: endpoints[endpoint] + path,
+                headers: {
+                    "Authorization": "Bearer " + token,
+                    "Content-Type": "application/json"
+                },
+                body: ( body === undefined ? [] : [JSON.stringify(body)])
+            }).then(function(resp) {
+                if (resp.status !== expects) {
+                    resp.body.read().then(function(b) {
+                        console.log(endpoint+" " + resp.status + " reason: " + b.toString());
+                    }).done();
+
+                    throw new Error(endpoint+" responded with " + resp.status);
+                } else {
+                    return resp.body.read().then(function(b) {
+                        try {
+                            return JSON.parse(b.toString());
+                        } catch(e) {
+                            console.log(e);
+                            return b;
+                        }
+                    });
+                }
+            });
+        });
+    },
+
     getEndpoints: function() {
         return Q.fcall(function() {
             if (_endpointCache !== undefined) {
