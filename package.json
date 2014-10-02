@@ -1,0 +1,16 @@
+{
+  "name": "spacebox-common",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": "0.10.x"
+  },
+  "main": "main",
+  "dependencies": {
+    "q": "~1",
+    "q-io": "~1"
+  },
+  "jshintConfig": {
+    "node": true
+  }
+}
