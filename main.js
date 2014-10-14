@@ -71,6 +71,7 @@ var self = {
         }).then(function(body) {
             return JSON.parse(body.toString());
         }).fail(function(e) {
+            console.log(e.stack);
             throw new Error("not authorized");
         });
     },
