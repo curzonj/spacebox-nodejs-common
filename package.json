@@ -12,6 +12,7 @@
     "q-io": "~1"
   },
   "jshintConfig": {
-    "node": true
+    "node": true,
+    "asi": true
   }
 }

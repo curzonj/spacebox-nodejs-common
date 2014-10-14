@@ -9,7 +9,27 @@ Q.longStackSupport = true;
 var _endpointCache;
 var _authCache;
 
-module.exports = {
+var env = (process !== undefined ? process.env : {});
+
+var self = {
+     setEnvHash: function(h) {
+         env = h
+     },
+     deepMerge: function (src, tgt) {
+        for (var attrname in src) {
+            var v = src[attrname];
+            if (typeof v == "object" &&
+                tgt.hasOwnProperty(attrname) &&
+                (typeof(tgt[attrname])) == "object") {
+
+                self.deepMerge(v, tgt[attrname]);
+            } else {
+                tgt[attrname] = v;
+            }
+        }
+
+        return tgt;
+    },
     authorize_req: function (req, restricted) {
         var auth_header = req.headers.authorization;
 
@@ -17,7 +37,7 @@ module.exports = {
             // We do this so that the Q-promise error handling
             // will catch it
             return Q.fcall(function() {
-                throw new Error("not authorized");
+                throw new Error("not authorized; missing header");
             });
         }
 
@@ -30,13 +50,16 @@ module.exports = {
         // token has metadata appended to the end of it
         // or is fernet encoded.
         if (parts[0] != "Bearer") {
-            throw new Error("not authorized");
+            return Q.fcall(function() {
+                throw new Error("not authorized; missing bearer");
+            });
         }
 
         // This will fail if it's not authorized
         return qhttp.read({
+            charset: "UTF-8", // This gets aronud a q-io bug with browserify
             method: "POST",
-            url: process.env.AUTH_URL + '/token',
+            url: env.AUTH_URL + '/token',
             headers: {
                 'X-Request-ID': uuidGen.v1(),
                 "Content-Type": "application/json"
@@ -51,20 +74,21 @@ module.exports = {
             throw new Error("not authorized");
         });
     },
-    // BOBSUNCLE
     request: function (endpoint, method, expects, path, body, opts) {
         if (opts === undefined) {
-            opts = {}
+            opts = {};
         }
 
-        return Q.spread([this.getEndpoints(), this.getAuthToken()], function(endpoints, token) {
+        return Q.spread([self.getEndpoints(), self.getAuthToken()], function(endpoints, token) {
             var bearer = token;
 
             if (opts.sudo_account !== undefined) {
                 bearer += '/' + opts.sudo_account;
             }
 
+            console.log('making request to '+endpoint);
             return qhttp.request({
+                charset: "UTF-8", // This gets aronud a q-io bug with browserify
                 method: method,
                 url: endpoints[endpoint] + path,
                 headers: {
@@ -79,7 +103,7 @@ module.exports = {
                         console.log(endpoint+" " + resp.status + " reason: " + b.toString());
 
                         throw new Error(endpoint+" responded with " + resp.status);
-                    }).done();
+                    });
                 } else {
                     if (resp.status !== 204) {
                         return resp.body.read().then(function(b) {
@@ -101,8 +125,10 @@ module.exports = {
             if (_endpointCache !== undefined) {
                 return _endpointCache;
             } else {
+                console.log('requesting endpoints');
                 return qhttp.read({
-                    url: process.env.SPODB_URL + '/endpoints',
+                    charset: "UTF-8", // This gets aronud a q-io bug with browserify
+                    url: env.SPODB_URL + '/endpoints',
                     headers: {
                         'X-Request-ID': uuidGen.v1(),
                         "Content-Type": "application/json",
@@ -119,18 +145,20 @@ module.exports = {
     },
 
     getAuth: function() {
-        return this.getEndpoints().then(function(endpoints) {
+        return self.getEndpoints().then(function(endpoints) {
             var now = new Date().getTime();
 
             if (_authCache !== undefined && _authCache.expires > now) {
                 return _authCache;
             } else {
+                console.log('requesting auth');
                 return qhttp.read({
+                    charset: "UTF-8", // This gets aronud a q-io bug with browserify
                     url: endpoints.auth + '/auth?ttl=3600',
                     headers: {
                         'X-Request-ID': uuidGen.v1(),
                         "Content-Type": "application/json",
-                        "Authorization": 'Basic ' + new Buffer(process.env.INTERNAL_CREDS).toString('base64')
+                        "Authorization": 'Basic ' + new Buffer(env.INTERNAL_CREDS).toString('base64')
                     }
                 }).then(function(b) {
                     _authCache = JSON.parse(b.toString());
@@ -145,8 +173,10 @@ module.exports = {
     },
 
     getAuthToken: function() {
-        return this.getAuth().then(function(auth) {
+        return self.getAuth().then(function(auth) {
             return auth.token;
         });
     }
 };
+
+module.exports = self;
