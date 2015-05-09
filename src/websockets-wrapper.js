@@ -2,66 +2,55 @@
 
 var C = require('../main.js'),
     WebSocket = require('ws'),
+    Q = require('q'),
     util = require('util'),
-    npm_debug = require('debug'),
-    log = npm_debug('build:info'),
-    error = npm_debug('build:error'),
-    debug = npm_debug('build:debug'),
     urlUtil = require("url"),
-    events = require('events');
-var handlers = {};
+    events = require('events')
 
-var WebsocketWrapper = function (service, path, opts) {
-    if (service === undefined || path === undefined) {
-        throw new Error("all parameters is required")
-    }
+var handlers = {}
 
+var WebsocketWrapper = function (service) {
     this.service = service
-    this.ws_path = path
-
-    if (opts !== undefined) {
-        C.deepMerge(opts, this);
-    }
 }
-util.inherits(WebsocketWrapper, events.EventEmitter);
+util.inherits(WebsocketWrapper, events.EventEmitter)
 
 C.deepMerge({
     getReadyState: function() {
         if (this.connection !== undefined) {
-            return this.connection.readyState;
+            return this.connection.readyState
         }
     },
     onOpen: function(fn) {
-        this.on('open', fn);
+        this.on('open', fn)
 
         if (this.getReadyState() == WebSocket.OPEN) {
-            fn(this.connection);
+            fn(this.connection)
         }
+    },
+    cmd: function(name, opts) {
+        if (opts === undefined) {
+            opts = {}
+        }
+
+        opts.command = name
+        this.connection.send(JSON.stringify(opts))
     },
     close: function() {
         this.connection.close();
     },
-    connect: function() {
-        var self = this;
+    connect: function(service) {
+        var self = this
 
         websocketUrl(self.service).then(function(url) {
-            var opts = {};
+            var conn = new WebSocket(url)
 
-            if (self.token) {
-                opts.headers = {
-                    "Authorization": 'Bearer ' + self.token
-                };
-            }
+            conn.onopen = self._onopen.bind(self)
+            conn.onclose = self._onclose.bind(self)
+            conn.onerror = self._onerror.bind(self)
+            conn.onmessage = self._onmessage.bind(self)
 
-            var conn = new WebSocket(url+self.ws_path, opts);
-
-            conn.onopen = self._onopen.bind(self);
-            conn.onclose = self._onclose.bind(self);
-            conn.onerror = self._onerror.bind(self);
-            conn.onmessage = self._onmessage.bind(self);
-
-            self.connection = conn;
-        }).done();
+            self.connection = conn
+        }).done()
     },
     _onopen: function() {
         this.emit('open', this.connection)
@@ -70,68 +59,64 @@ C.deepMerge({
     _onclose: function(e) {
         this.emit('close', e, this.connection)
 
-        debug("waiting 1sec to reconnect");
+        console.log("waiting 1sec to reconnect")
 
-        this._reconnect();
-    },
-
-    _reconnect: function() {
-        var self = this;
+        var self = this
         setTimeout(function() {
-            log("reconnecting");
-            self.connect();
-        }, 1000);
+            console.log("reconnecting")
+            self.connect()
+        }, 1000)
     },
     _onerror: function(error) {
-        debug('WebSocket Error');
-        debug(error);
+        console.log('WebSocket Error')
+        console.log(error)
 
         // Don't emit undhandled error events
         if (this.listeners('error').length > 0) {
             this.emit('error', error, this.connection)
         }
-
-        this._reconnect();
     },
     _onmessage: function(message) {
-        this.emit('message', message, this.connection);
+        this.emit('message', message, this.connection)
     }
 }, WebsocketWrapper.prototype)
 
 function websocketUrl(service) {
-    return C.getEndpoints().then(function(endpoints) {
+    return Q.spread([C.getEndpoints(), C.getAuthToken()], function(endpoints, token) {
         if (endpoints[service] === undefined) {
             throw new Error(Object.keys(endpoints)+ " is missing "+service)
         }
 
         var new_uri,
-        loc = urlUtil.parse(endpoints[service])
+            path = paths[service] || '/',
+            loc = urlUtil.parse(endpoints[service])
 
         if (loc.protocol === "https:") {
-            new_uri = "wss:";
+            new_uri = "wss:"
         } else {
-            new_uri = "ws:";
+            new_uri = "ws:"
         }
-        new_uri += "//" + loc.host
+        new_uri += "//" + loc.host + path + '?token=' + token
 
         return new_uri
-    });
+    })
 }
 
-module.exports = {
-    get: function(service, path, opts) {
-        if (handlers[service] === undefined) {
-            if (path === undefined) {
-                throw new Error("first call to get a websocket must give the path");
-            }
+var paths={}
 
-            var h = handlers[service] = new WebsocketWrapper(service, path, opts);
+module.exports = {
+    registerPath: function(service, path) {
+        paths[service] = path
+    },
+    get: function(service) {
+        if (handlers[service] === undefined) {
+            var h = handlers[service] = new WebsocketWrapper(service)
 
             // This is an async call
-            h.connect();
+            h.connect()
         }
 
-        return handlers[service];
+        return handlers[service]
     },
 }
 
