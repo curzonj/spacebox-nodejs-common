@@ -14,6 +14,8 @@ var _authCache
 var config = {}
 
 function HttpError(statusCode, msgCode, details) {
+    Error.captureStackTrace(this, this.constructor)
+
     this.status = statusCode
     this.msgCode = msgCode
     this.details = details || {}
@@ -74,13 +76,6 @@ var self = {
             }
 
             var parts = auth_header.split(' ')
-
-            // TODO make a way for internal apis to authorize
-            // as a specific account without having to get a
-            // different bearer token for each one. Perhaps
-            // auth will return a certain account if the authorized
-            // token has metadata appended to the end of it
-            // or is fernet encoded.
             if (parts[0] != "Bearer") {
                 return Q.fcall(function() {
                     throw new Error("not authorized missing bearer")
@@ -90,14 +85,17 @@ var self = {
             return self.http.authorize_token(parts[1], restricted)
         },
         authorize_token: function(token, restricted) {
+            var request_id = uuidGen.v1()
+            debug('c:request')('validating token', token, 'with request', request_id)
+
             // This will fail if it's not authorized
             return qhttp.read({
                 charset: "UTF-8", // This gets aronud a q-io bug with browserify
                 method: "POST",
                 url: config.AUTH_URL + '/token',
                 headers: {
-                    'X-Request-ID': uuidGen.v1(),
-                    "Content-Type": "application/json"
+                    'X-Request-ID': request_id,
+                    "Content-Type": "application/json",
                 },
                 body: [JSON.stringify({
                     token: token,
