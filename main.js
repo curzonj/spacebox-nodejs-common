@@ -33,10 +33,13 @@ function HttpError(statusCode, msgCode, details) {
 util.inherits(HttpError, Error)
 
 var self = {
+    TracingContext: require('./src/logging.js'),
     http: {
         Error: HttpError,
         errHandler: function(req, res, log) {
             return function(err) {
+                res.append('Request-ID', req.request_id || 'unknown')
+
                 if (self.isA(err, "HttpError")) {
                     res.status(err.status).send({
                         errorCode: err.msgCode,
@@ -45,6 +48,10 @@ var self = {
                 } else {
                     if (err.stack === undefined) {
                         log(err)
+
+                        var fakeErr = new Error();
+                        Error.captureStackTrace(fakeErr, self.http.errHandler);
+                        log('pseudo stack', fakeErr.stack)
                     } else {
                         log(err.stack)
                     }
@@ -105,10 +112,53 @@ var self = {
                 return JSON.parse(body.toString())
             }).fail(function(e) {
                 console.log(e.stack)
-                throw new Error("not authorized")
+                throw new self.http.Error(401, "invalid_token")
             })
         },
     },
+
+    array_unique: function(a) {
+        return a.filter(function(e, p) {
+            return (a.indexOf(e) == p)
+        
+        })
+    },
+
+    compute_array_changes: function(original, current) {
+        function which_removed(a1, a2) {
+            var copy = a2.slice(),
+                removed = []
+
+            // if we have any facilities for which we no longer
+            // have modules installed, disable them for resolution
+            a1.forEach(function(v) {
+                var i = copy.indexOf(v)
+                if (i > -1) {
+                    copy.splice(i, 1)
+                } else {
+                    removed = removed.concat(v)
+                }
+            })
+
+            return removed
+        }
+
+        function which_unchanged(original, removed) {
+            return original.filter(function(v) {
+                return (removed.indexOf(v) > -1)
+            })
+        }
+
+        var changes = {
+            added: which_removed(current, original),
+            removed: which_removed(original, current)
+        }
+
+        changes.unchanged = which_unchanged(original, changes.removed)
+
+        return changes
+    },
+
 
     qCatchOnly: function(c, fn) {
         return function(e) {
@@ -156,22 +206,7 @@ var self = {
             throw "find failed"
         }
     },
-     deepMerge: function (src, tgt) {
-        for (var attrname in src) {
-            var v = src[attrname]
-
-            if (typeof v == "object" &&
-                tgt.hasOwnProperty(attrname) &&
-                (typeof(tgt[attrname])) == "object") {
-
-                self.deepMerge(v, tgt[attrname])
-            } else if (v !== undefined){
-                tgt[attrname] = v
-            }
-        }
-
-        return tgt
-    },
+    deepMerge: require('./src/deepMerge.js'),
     request: function (endpoint, method, expects, path, body, opts) {
         if (opts === undefined) {
             opts = {}
@@ -211,7 +246,13 @@ var self = {
                             code = 'unknown'
                         }
 
-                        throw new self.http.Error(resp.status, code, details)
+                        var err = new self.http.Error(resp.status, code, details)
+                        err.request_id = resp.headers['request-id']
+                        err.request_method = method
+                        err.request_service = endpoint
+                        err.request_path = path
+
+                        throw err
                     })
                 } else {
                     if (resp.status !== 204) {
@@ -296,7 +337,7 @@ var self = {
             quantity: quantity
         }]
         */
-        return self.request("inventory", "POST", 204, "/inventory", data, { sudo_account: account }).tap(self.qDebug('updateInventory'))
+        return self.request("tech", "POST", 204, "/inventory", data, { sudo_account: account }).tap(self.qDebug('updateInventory'))
     },
     qDebug: function(location) {
         return function(value) {
