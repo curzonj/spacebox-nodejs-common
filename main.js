@@ -145,7 +145,7 @@ var self = {
 
         function which_unchanged(original, removed) {
             return original.filter(function(v) {
-                return (removed.indexOf(v) > -1)
+                return (removed.indexOf(v) === -1)
             })
         }
 
