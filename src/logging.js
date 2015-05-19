@@ -13,7 +13,7 @@ function Context(id) {
     }
 }
 
-var debug_scopes = process.env.MYDEBUG
+var debug_scopes = process.env.MYDEBUG || ''
 
 deepMerge({
     log: function() {
