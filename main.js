@@ -301,6 +301,11 @@ var self = {
         })
     },
 
+    // This is only used in some cases like temp accounts
+    setAuth: function(auth) {
+        _authCache = auth
+    },
+
     getAuth: function() {
         if (config.credentials === undefined) {
             throw "no credentials have been configured"
