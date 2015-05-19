@@ -1,6 +1,9 @@
 'use strict';
 
-module.exports = function deepMerge(src, tgt) {
+module.exports = function deepMerge(src, tgt, opts) {
+    if (opts === undefined)
+        opts = {}
+
      Object.keys(src).forEach(function(attrname) {
         var v = src[attrname]
 
@@ -16,7 +19,11 @@ module.exports = function deepMerge(src, tgt) {
                     throw("incompatible deepMerge, non-array on "+attrname+'.')
                 }
 
-                tgt[attrname] = a1.concat(v)
+                if (opts.arrayConcat) {
+                    tgt[attrname] = a1.concat(v)
+                } else {
+                    tgt[attrname] = v
+                }
             }
         } else if (typeof v == "object" &&
             tgt.hasOwnProperty(attrname)) {

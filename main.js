@@ -125,6 +125,13 @@ var self = {
     },
 
     compute_array_changes: function(original, current) {
+        /*
+         * This is based on what the module refitting differ needs
+         * > C.compute_array_changes([1,2,3,4,4,4,], [2,3,4])
+         *   { added: [],
+         *     removed: [ 1, 4, 4 ],
+         *     unchanged: [ 2, 3 ] }
+         */
         function which_removed(a1, a2) {
             var copy = a2.slice(),
                 removed = []
