@@ -4,6 +4,7 @@ var Q = require('q'),
     util = require('util'),
     qhttp = require("q-io/http"),
     debug = require('debug'),
+    jwt = require('jsonwebtoken'),
     uuidGen = require('node-uuid')
 
 Q.longStackSupport = true
@@ -31,6 +32,8 @@ function HttpError(statusCode, msgCode, details) {
     ].join('')
 }    
 util.inherits(HttpError, Error)
+
+var jwtVerifyQ = Q.nbind(jwt.verify, jwt);
 
 var self = {
     TracingContext: require('./src/logging.js'),
@@ -92,29 +95,15 @@ var self = {
             return self.http.authorize_token(parts[1], restricted)
         },
         authorize_token: function(token, restricted) {
-            var request_id = uuidGen.v1()
-            debug('c:request')('validating token', token, 'with request', request_id)
+            return jwtVerifyQ(token, process.env.JWT_VERIFY_KEY).then(function(authorization) {
+                if ((restricted === true || restricted == 'true') &&
+                    authorization.privileged !== true) {
+                    throw new Error("rejected for restricted endpoint: "+authorization.account)
+                }
 
-            // This will fail if it's not authorized
-            return qhttp.read({
-                charset: "UTF-8", // This gets aronud a q-io bug with browserify
-                method: "POST",
-                url: config.AUTH_URL + '/token',
-                headers: {
-                    'X-Request-ID': request_id,
-                    "Content-Type": "application/json",
-                },
-                body: [JSON.stringify({
-                    token: token,
-                    restricted: (restricted === true)
-                })]
-            }).then(function(body) {
-                return JSON.parse(body.toString())
-            }).fail(function(e) {
-                console.log(e.stack)
-                throw new self.http.Error(401, "invalid_token")
+                return authorization
             })
-        },
+        }
     },
 
     array_unique: function(a) {
@@ -220,10 +209,8 @@ var self = {
         }
 
         return Q.spread([self.getEndpoints(), self.getAuthToken()], function(endpoints, token) {
-            var bearer = token
-
             if (opts.sudo_account !== undefined) {
-                bearer += '/' + opts.sudo_account
+                throw new Error("sudo_account option now invalid")
             }
 
             debug('c:request')({ endpoint: endpoint, method: method, path: path, expects: expects })
@@ -233,7 +220,7 @@ var self = {
                 url: endpoints[endpoint] + path,
                 headers: {
                     'X-Request-ID': uuidGen.v1(),
-                    "Authorization": "Bearer " + bearer,
+                    "Authorization": "Bearer " + token,
                     "Content-Type": "application/json"
                 },
                 body: ( (body === undefined || method == "GET") ? [] : [JSON.stringify(body)])
@@ -328,7 +315,11 @@ var self = {
                     }
                 }).then(function(b) {
                     try {
-                        _authCache = JSON.parse(b.toString())
+                        var value = b.toString()
+
+                        _authCache = jwt.decode(value)
+                        _authCache.token = value
+
                         return _authCache
                     } catch(e) {
                         console.log("invalid authentication data", b)
