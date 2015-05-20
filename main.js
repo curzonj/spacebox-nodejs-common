@@ -299,7 +299,7 @@ var self = {
         }
 
         return self.getEndpoints().then(function(endpoints) {
-            var now = new Date().getTime()
+            var now = Math.floor((new Date().getTime()) / 1000)
 
             if (_authCache !== undefined && _authCache.expires > now) {
                 return _authCache
@@ -316,9 +316,13 @@ var self = {
                 }).then(function(b) {
                     try {
                         var value = b.toString()
+                        var decoded = jwt.decode(value)
 
-                        _authCache = jwt.decode(value)
-                        _authCache.token = value
+                        _authCache = {
+                            account: decoded.account,
+                            expires: decoded.exp,
+                            token: value
+                        }
 
                         return _authCache
                     } catch(e) {
