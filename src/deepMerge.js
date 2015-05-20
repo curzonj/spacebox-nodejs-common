@@ -4,6 +4,9 @@ module.exports = function deepMerge(src, tgt, opts) {
     if (opts === undefined)
         opts = {}
 
+    if (src === undefined || tgt === undefined)
+        throw new Error("undefined parameters to deepMerge")
+
      Object.keys(src).forEach(function(attrname) {
         var v = src[attrname]
 
