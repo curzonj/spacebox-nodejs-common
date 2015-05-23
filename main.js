@@ -43,22 +43,22 @@ var self = {
             return function(err) {
                 res.append('Request-ID', req.request_id || 'unknown')
 
+                if (err.stack === undefined) {
+                    log(err)
+
+                    var fakeErr = new Error();
+                    Error.captureStackTrace(fakeErr, self.http.errHandler);
+                    log('pseudo stack', fakeErr.stack)
+                } else {
+                    log(err.stack)
+                }
+
                 if (self.isA(err, "HttpError")) {
                     res.status(err.status).send({
                         errorCode: err.msgCode,
                         errorDetails: err.details
                     })
                 } else {
-                    if (err.stack === undefined) {
-                        log(err)
-
-                        var fakeErr = new Error();
-                        Error.captureStackTrace(fakeErr, self.http.errHandler);
-                        log('pseudo stack', fakeErr.stack)
-                    } else {
-                        log(err.stack)
-                    }
-
                     res.status(500).send(err.toString())
                 }
             }
@@ -203,17 +203,12 @@ var self = {
         }
     },
     deepMerge: require('./src/deepMerge.js'),
-    request: function (endpoint, method, expects, path, body, opts) {
-        if (opts === undefined) {
-            opts = {}
-        }
+    request: function (endpoint, method, expects, path, body, ctx) {
+        if (ctx === undefined)
+            ctx = new self.TracingContext()
 
         return Q.spread([self.getEndpoints(), self.getAuthToken()], function(endpoints, token) {
-            if (opts.sudo_account !== undefined) {
-                throw new Error("sudo_account option now invalid")
-            }
-
-            debug('c:request')({ endpoint: endpoint, method: method, path: path, expects: expects })
+            ctx.debug('request', { endpoint: endpoint, method: method, path: path, expects: expects, body: body })
             return qhttp.request({
                 charset: "UTF-8", // This gets aronud a q-io bug with browserify
                 method: method,
