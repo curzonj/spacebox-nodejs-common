@@ -36,7 +36,12 @@ util.inherits(HttpError, Error)
 var jwtVerifyQ = Q.nbind(jwt.verify, jwt);
 
 var self = {
-    TracingContext: require('./src/logging.js'),
+    uuidRe: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    assertUUID: function(value) {
+        if (typeof value !== 'string' || !self.uuidRe.test(value))
+            throw new Error("invalid uuid "+value)
+    },
+    TracingContext: require('./logging.js'),
     http: {
         Error: HttpError,
         errHandler: function(req, res, log) {
@@ -104,6 +109,27 @@ var self = {
                 return authorization
             })
         }
+    },
+
+    calc_poly: function(obj, values) {
+        return obj.components.reduce(function(acc1, component) {
+            var v1 = acc1 + component.reduce(function(acc2, exp, i) {
+                var name = obj.parameters[i-1]
+                var base = values[name]
+                if (isNaN(base))
+                    throw new Error("failed to get "+i+"/"+name+' from '+JSON.stringify(values))
+
+                var pow = Math.pow(base, exp)
+
+                var v2  = (acc2 * pow)
+
+                //console.log(acc2, '*', base, '^', exp, '==', v2)
+                return v2
+            })
+
+            console.log(component, '+=', v1)
+            return v1
+        }, 0)
     },
 
     array_unique: function(a) {
@@ -202,7 +228,7 @@ var self = {
             throw "find failed"
         }
     },
-    deepMerge: require('./src/deepMerge.js'),
+    deepMerge: require('./deepMerge.js'),
     request: function (endpoint, method, expects, path, body, ctx) {
         if (ctx === undefined)
             ctx = new self.TracingContext()

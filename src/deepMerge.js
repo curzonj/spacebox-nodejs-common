@@ -28,7 +28,7 @@ module.exports = function deepMerge(src, tgt, opts) {
                     tgt[attrname] = v
                 }
             }
-        } else if (typeof v == "object" &&
+        } else if (typeof v == "object" && v !== null &&
             tgt.hasOwnProperty(attrname)) {
 
             if (Array.isArray(tgt[attrname]) ||
