@@ -4,11 +4,13 @@ module.exports = function deepMerge(src, tgt, opts) {
     if (opts === undefined)
         opts = {}
 
-    if (src === undefined || tgt === undefined)
-        throw new Error("undefined parameters to deepMerge")
+    if (src === undefined || tgt === undefined || tgt === null || src === null)
+        throw new Error("undefined parameters to deepMerge: "+JSON.stringify([src,tgt]))
 
-     Object.keys(src).forEach(function(attrname) {
-        var v = src[attrname]
+    var keys = Object.keys(src)
+    for (var i = 0, l = keys.length; i < l; i++) {
+        var attrname = keys[i],
+            v = src[attrname]
 
         if (Array.isArray(v)) {
             var a1 = tgt[attrname]
@@ -29,7 +31,9 @@ module.exports = function deepMerge(src, tgt, opts) {
                 }
             }
         } else if (typeof v == "object" && v !== null &&
-            tgt.hasOwnProperty(attrname)) {
+            tgt.hasOwnProperty(attrname) &&
+            tgt[attrname] !== null &&
+            tgt[attrname] !== undefined) {
 
             if (Array.isArray(tgt[attrname]) ||
                 (typeof(tgt[attrname])) != "object") {
@@ -44,7 +48,7 @@ module.exports = function deepMerge(src, tgt, opts) {
         } else if (v !== undefined){
             tgt[attrname] = v
         }
-    })
+    }
 
     return tgt
 }

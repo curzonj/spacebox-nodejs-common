@@ -1,6 +1,6 @@
 'use strict';
 
-var C = require('../main.js'),
+var C = require('./main.js'),
     WebSocket = require('ws'),
     uuidGen = require('node-uuid'),
     npm_debug = require('debug'),
@@ -10,10 +10,9 @@ var C = require('../main.js'),
     urlUtil = require("url"),
     events = require('events')
 
-var handlers = {}
-
-var WebsocketWrapper = function (service) {
-    this.service = service
+var WebsocketWrapper = function (urlq) {
+    this.urlq = urlq
+    this.reconnectTimer = null
 }
 util.inherits(WebsocketWrapper, events.EventEmitter)
 
@@ -40,14 +39,16 @@ C.deepMerge({
         debug('sending', opts)
 
         this.connection.send(JSON.stringify(opts))
+
+        return opts.request_id
     },
     close: function() {
         this.connection.close();
     },
-    connect: function(service) {
+    connect: function() {
         var self = this
 
-        websocketUrl(self.service).then(function(url) {
+        Q(self.urlq).then(function(url) {
             var conn = new WebSocket(url)
 
             conn.onopen = self._onopen.bind(self)
@@ -69,11 +70,16 @@ C.deepMerge({
     _reconnect: function() {
         var self = this
 
-        debug("waiting 1sec to reconnect")
-        setTimeout(function() {
+        if (self.reconnectTimer !== null)
+            return 
+
+        debug("waiting 5sec to reconnect")
+        self.reconnectTimer = setTimeout(function() {
+            self.reconnectTimer = null
+
             debug("reconnecting")
             self.connect()
-        }, 1000)
+        }, 5000)
     },
     _onerror: function(error) {
         debug('WebSocket Error')
@@ -91,42 +97,49 @@ C.deepMerge({
     }
 }, WebsocketWrapper.prototype)
 
-function websocketUrl(service) {
-    return Q.spread([C.getEndpoints(), C.getAuthToken()], function(endpoints, token) {
-        if (endpoints[service] === undefined) {
-            throw new Error(Object.keys(endpoints)+ " is missing "+service)
-        }
+function buildScope() {
+    var paths={}
+    var handlers = {}
 
-        var new_uri,
-            path = paths[service] || '/',
-            loc = urlUtil.parse(endpoints[service])
+    function websocketUrl(service) {
+        return Q.spread([C.getEndpoints(), C.getAuthToken()], function(endpoints, token) {
+            if (endpoints[service] === undefined) {
+                throw new Error(Object.keys(endpoints)+ " is missing "+service)
+            }
 
-        if (loc.protocol === "https:") {
-            new_uri = "wss:"
-        } else {
-            new_uri = "ws:"
-        }
-        new_uri += "//" + loc.host + path + '?token=' + token
+            var new_uri,
+                path = paths[service] || '/',
+                loc = urlUtil.parse(endpoints[service])
 
-        return new_uri
-    })
+            if (loc.protocol === "https:") {
+                new_uri = "wss:"
+            } else {
+                new_uri = "ws:"
+            }
+            new_uri += "//" + loc.host + path + '?token=' + token
+
+            console.log('websocket url is', new_uri)
+            return new_uri
+        })
+    }
+
+    return {
+        registerPath: function(service, path) {
+            paths[service] = path
+        },
+        get: function(service) {
+            if (handlers[service] === undefined) {
+                var urlq = websocketUrl(service)
+                var h = handlers[service] = new WebsocketWrapper(urlq)
+
+                // This is an async call
+                h.connect()
+            }
+
+            return handlers[service]
+        },
+    }
 }
 
-var paths={}
-
-module.exports = {
-    registerPath: function(service, path) {
-        paths[service] = path
-    },
-    get: function(service) {
-        if (handlers[service] === undefined) {
-            var h = handlers[service] = new WebsocketWrapper(service)
-
-            // This is an async call
-            h.connect()
-        }
-
-        return handlers[service]
-    },
-}
-
+var defaultScope = module.exports = buildScope()
+defaultScope.customScope = buildScope

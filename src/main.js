@@ -223,10 +223,8 @@ var self = {
             }
         }
 
-        if (or_fail) {
-            console.log(cmp)
-            throw "find failed"
-        }
+        if (or_fail)
+            throw new Error("find failed"+JSON.stringify(cmp))
     },
     deepMerge: require('./deepMerge.js'),
     request: function (endpoint, method, expects, path, body, ctx) {
@@ -373,8 +371,27 @@ var self = {
         }
     },
     getBlueprints: function() {
-        return self.request('tech', 'GET', 200, '/blueprints')
-    },
+        var _cache = null
+
+        var fn = function() {
+            return Q.fcall(function() {
+                if (_cache !== null) {
+                    return _cache
+                } else {
+                    return self.request('tech', 'GET', 200, '/blueprints').
+                    tap(function(data) {
+                        _cache = data
+                    })
+                }
+            })
+        }
+
+        fn.reset = function() {
+            _cache = null
+        }
+
+        return fn
+    }(),
     getAuthToken: function() {
         return self.getAuth().then(function(auth) {
             return auth.token
