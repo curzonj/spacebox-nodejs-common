@@ -370,24 +370,24 @@ var self = {
             debug('qTap:'+location)(value)
         }
     },
-    getBlueprints: function() {
-        var _cache = null
+    getBlueprint: function() {
+        var _cache = {}
 
-        var fn = function() {
+        var fn = function(uuid) {
             return Q.fcall(function() {
-                if (_cache !== null) {
-                    return _cache
+                if (_cache[uuid] !== undefined) {
+                    return _cache[uuid]
                 } else {
-                    return self.request('tech', 'GET', 200, '/blueprints').
+                    return self.request('tech', 'GET', 200, '/blueprints/'+uuid).
                     tap(function(data) {
-                        _cache = data
+                        _cache[uuid] = data
                     })
                 }
             })
         }
 
         fn.reset = function() {
-            _cache = null
+            _cache = {}
         }
 
         return fn

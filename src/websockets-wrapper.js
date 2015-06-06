@@ -118,7 +118,6 @@ function buildScope() {
             }
             new_uri += "//" + loc.host + path + '?token=' + token
 
-            console.log('websocket url is', new_uri)
             return new_uri
         })
     }

@@ -3,19 +3,24 @@
 var deepMerge = require('./deepMerge.js'),
     uuidGen = require('node-uuid')
 
-function Context(id) {
+function Context(parent) {
     this.prefix = [ ]
     this.limited_prefixes = {}
 
-    if (id !== undefined) {
-        this.id = id
-        this.prefix.push("req_id="+id)
+    if (parent !== undefined) {
+      this.extend(parent)
     }
 }
 
 var debug_scopes = process.env.MYDEBUG || ''
 
 deepMerge({
+    extend: function(parent) {
+      this.prefix = parent.prefix.slice()
+      Object.keys(parent.limited_prefixes).forEach(function(k) {
+        this.limited_prefixes[k] = parent.limited_prefixes[k].slice()
+      }, this)
+    },
     log: function() {
         var args = Array.prototype.slice.call(arguments),
             name = args.splice(0, 1)[0],
@@ -32,7 +37,7 @@ deepMerge({
             console.log.apply(console, [ name ].concat(this.prefix, other, args))
     },
     log_with: function(fn, parts, scope) {
-        var ctx = new Context(this.id, this.req)
+        var ctx = new Context(this)
         if (scope === undefined) {
             ctx.prefix = ctx.prefix.concat(parts)
         } else {
