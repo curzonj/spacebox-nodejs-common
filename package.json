@@ -8,6 +8,7 @@
   "main": "src/main",
   "dependencies": {
     "bunyan": "latest",
+    "measured": "latest",
     "gelf-stream": "curzonj/gelf-stream",
     "ws": "latest",
     "q": "~1.3.0",

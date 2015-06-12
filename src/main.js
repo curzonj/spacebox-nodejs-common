@@ -40,14 +40,13 @@ var self = {
         if (typeof value !== 'string' || !self.uuidRe.test(value))
             throw new Error("invalid uuid "+value)
     },
-    logging: require('./logging.js'),
+    logging: require('./logging'),
+    stats: require('./stats'),
     http: {
         Error: HttpError,
         errHandler: function(req, res) {
             return function(err) {
                 if (err.stack === undefined) {
-                    log(err)
-
                     var fakeErr = new Error();
                     Error.captureStackTrace(fakeErr, self.http.errHandler);
                     err.stack = fakeErr.stack
@@ -226,7 +225,7 @@ var self = {
     deepMerge: require('./deepMerge.js'),
     request: function (endpoint, method, expects, path, body, ctx) {
         if (ctx === undefined)
-            ctx = self.logging.create('common')
+            ctx = self.logging.create()
 
         return Q.spread([self.getEndpoints(), self.getAuthToken()], function(endpoints, token) {
             ctx.debug({ endpoint: endpoint, method: method, path: path, expects: expects, body: body }, 'making request')

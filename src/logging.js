@@ -17,7 +17,8 @@ function Context(bunyan, parent) {
         this.extend(parent)
 }
 
-var debug_scopes = process.env.MYDEBUG || ''
+var defaultBunyan,
+    debug_scopes = process.env.MYDEBUG || ''
 
 deepMerge({
     extend: function(parent) {
@@ -100,11 +101,19 @@ var self = module.exports = {
         }
     },
     create: function(bunyan) {
-        if (typeof bunyan == 'string') {
-            bunyan = self.buildBunyan(bunyan)
-        }
+        if (typeof bunyan === 'string')
+            throw new Error("the logging.create api has changed")
+
+        if (bunyan === undefined)
+            bunyan = defaultBunyan
+
+        if (bunyan === undefined)
+            throw new Error("C.logging is not configured yet")
 
         return new Context(bunyan)
+    },
+    configure: function(name) {
+        defaultBunyan = self.buildBunyan(name)
     },
     buildBunyan: function(name) {
         var stdout_level = 'info'
@@ -116,7 +125,7 @@ var self = module.exports = {
             { level: stdout_level, stream: process.stdout },
         ]
 
-        if (process.env.DOCKER_IP !== undefined) {
+        if (process.env.DOCKER_IP !== undefined && process.env.GELF_ENABLED == '1') {
             var gelfStream = require('gelf-stream'),
                 stream = gelfStream.forBunyan(process.env.DOCKER_IP, 12201)
 
