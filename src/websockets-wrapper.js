@@ -3,12 +3,12 @@
 var C = require('./main.js'),
     WebSocket = require('ws'),
     uuidGen = require('node-uuid'),
-    npm_debug = require('debug'),
-    debug = npm_debug('c:websocket'),
     Q = require('q'),
     util = require('util'),
     urlUtil = require("url"),
     events = require('events')
+
+var logger = C.logging.create('websockets')
 
 var WebsocketWrapper = function (urlq) {
     this.urlq = urlq
@@ -36,7 +36,7 @@ C.deepMerge({
 
         opts.command = name
         opts.request_id = uuidGen.v1()
-        debug('sending', opts)
+        logger.debug(opts, 'sending')
 
         this.connection.send(JSON.stringify(opts))
 
@@ -73,17 +73,16 @@ C.deepMerge({
         if (self.reconnectTimer !== null)
             return 
 
-        debug("waiting 5sec to reconnect")
+        logger.debug("waiting 5sec to reconnect")
         self.reconnectTimer = setTimeout(function() {
             self.reconnectTimer = null
 
-            debug("reconnecting")
+            logger.debug("reconnecting")
             self.connect()
         }, 5000)
     },
     _onerror: function(error) {
-        debug('WebSocket Error')
-        debug(error)
+        logger.debug({ err: error }, 'WebSocket Error')
 
         // Don't emit undhandled error events
         if (this.listeners('error').length > 0) {

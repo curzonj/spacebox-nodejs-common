@@ -3,7 +3,6 @@
 var Q = require('q'),
     util = require('util'),
     qhttp = require("q-io/http"),
-    debug = require('debug'),
     jwt = require('jsonwebtoken'),
     uuidGen = require('node-uuid')
 
@@ -41,22 +40,20 @@ var self = {
         if (typeof value !== 'string' || !self.uuidRe.test(value))
             throw new Error("invalid uuid "+value)
     },
-    TracingContext: require('./logging.js'),
+    logging: require('./logging.js'),
     http: {
         Error: HttpError,
-        errHandler: function(req, res, log) {
+        errHandler: function(req, res) {
             return function(err) {
-                res.append('Request-ID', req.request_id || 'unknown')
-
                 if (err.stack === undefined) {
                     log(err)
 
                     var fakeErr = new Error();
                     Error.captureStackTrace(fakeErr, self.http.errHandler);
-                    log('pseudo stack', fakeErr.stack)
-                } else {
-                    log(err.stack)
+                    err.stack = fakeErr.stack
                 }
+
+                req.ctx.error({ err: err }, 'http request server error')
 
                 if (self.isA(err, "HttpError")) {
                     res.status(err.status).send({
@@ -127,7 +124,7 @@ var self = {
                 return v2
             })
 
-            console.log(component, '+=', v1)
+            //console.log(component, '+=', v1)
             return v1
         }, 0)
     },
@@ -229,10 +226,10 @@ var self = {
     deepMerge: require('./deepMerge.js'),
     request: function (endpoint, method, expects, path, body, ctx) {
         if (ctx === undefined)
-            ctx = new self.TracingContext()
+            ctx = self.logging.create('common')
 
         return Q.spread([self.getEndpoints(), self.getAuthToken()], function(endpoints, token) {
-            ctx.debug('request', { endpoint: endpoint, method: method, path: path, expects: expects, body: body })
+            ctx.debug({ endpoint: endpoint, method: method, path: path, expects: expects, body: body }, 'making request')
             return qhttp.request({
                 charset: "UTF-8", // This gets aronud a q-io bug with browserify
                 method: method,
@@ -246,7 +243,7 @@ var self = {
             }).then(function(resp) {
                 if (resp.status !== expects) {
                     return resp.body.read().then(function(b) {
-                        debug('c:request')(endpoint+" " + resp.status + " reason: " + b.toString())
+                        ctx.debug(endpoint+" " + resp.status + " reason: " + b.toString())
 
                         var code, details
 
@@ -260,7 +257,7 @@ var self = {
                         }
 
                         var err = new self.http.Error(resp.status, code, details)
-                        err.request_id = resp.headers['request-id']
+                        err.request_id = resp.headers['x-request-id']
                         err.request_method = method
                         err.request_service = endpoint
                         err.request_path = path
@@ -363,12 +360,7 @@ var self = {
             quantity: quantity
         }]
         */
-        return self.request("tech", "POST", 204, "/inventory", data, { sudo_account: account }).tap(self.qDebug('updateInventory'))
-    },
-    qDebug: function(location) {
-        return function(value) {
-            debug('qTap:'+location)(value)
-        }
+        return self.request("api", "POST", 204, "/inventory", data, { sudo_account: account })
     },
     getBlueprint: function() {
         var _cache = {}
@@ -378,7 +370,7 @@ var self = {
                 if (_cache[uuid] !== undefined) {
                     return _cache[uuid]
                 } else {
-                    return self.request('tech', 'GET', 200, '/blueprints/'+uuid).
+                    return self.request('api', 'GET', 200, '/blueprints/'+uuid).
                     tap(function(data) {
                         _cache[uuid] = data
                     })

@@ -7,8 +7,9 @@
   },
   "main": "src/main",
   "dependencies": {
+    "bunyan": "latest",
+    "gelf-stream": "curzonj/gelf-stream",
     "ws": "latest",
-    "debug": "~2.0.0",
     "q": "~1.3.0",
     "q-io": "~1.12.0",
     "jsonwebtoken": "latest",
