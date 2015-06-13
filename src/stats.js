@@ -62,7 +62,8 @@ process.nextTick(function() {
         if (process && process.memoryUsage)
             values.memory = process.memoryUsage()
 
+        // TODO we need other ways of delivering
+        // metrics
         logger.debug(values, 'metrics')
     }, 1000)
-
 })

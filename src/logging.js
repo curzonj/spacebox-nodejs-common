@@ -129,11 +129,15 @@ var self = module.exports = {
             return named_loggers[name]
 
         var stdout_level = 'info'
-        if (process.env.LOG_LEVEL !== undefined)
-            stdout_level = process.env.LOG_LEVEL
+        if (process.env.STDOUT_LOG_LEVEL !== undefined)
+            stdout_level = process.env.STDOUT_LOG_LEVEL
+
+        var file_level = 'debug'
+        if (process.env.FILE_LOG_LEVEL !== undefined)
+            file_level = process.env.FILE_LOG_LEVEL
 
         var list = [
-            { level: 'trace', path: path.resolve(__filename, '../../../logs/'+name+'.json') },
+            { level: file_level, path: path.resolve(__filename, '../../../logs/'+name+'.json') },
             { level: stdout_level, stream: process.stdout },
         ]
 
