@@ -1,6 +1,7 @@
 'use strict';
 
-var deepMerge = require('./deepMerge.js'),
+var deepMerge = require('./deepMerge'),
+    stats = require('./stats'),
     path = require('path'),
     bunyan = require('bunyan'),
     uuidGen = require('node-uuid')
@@ -17,7 +18,7 @@ function Context(bunyan, parent) {
         this.extend(parent)
 }
 
-var defaultBunyan,
+var defaultBunyan, defaultContext,
     debug_scopes = process.env.MYDEBUG || ''
 
 deepMerge({
@@ -71,6 +72,8 @@ deepMerge({
     }
 })
 
+var named_loggers = {}
+
 var self = module.exports = {
     trace: function(fn_name, fn) {
         // TODO add `measured` stats to this
@@ -100,6 +103,12 @@ var self = module.exports = {
             }
         }
     },
+    defaultCtx: function() {
+        if (defaultContext === undefined)
+            defaultContext = self.create()
+
+        return defaultContext
+    },
     create: function(bunyan) {
         if (typeof bunyan === 'string')
             throw new Error("the logging.create api has changed")
@@ -116,6 +125,9 @@ var self = module.exports = {
         defaultBunyan = self.buildBunyan(name)
     },
     buildBunyan: function(name) {
+        if (named_loggers[name])
+            return named_loggers[name]
+
         var stdout_level = 'info'
         if (process.env.LOG_LEVEL !== undefined)
             stdout_level = process.env.LOG_LEVEL
@@ -132,9 +144,18 @@ var self = module.exports = {
             list.push({ level: 'debug', type: 'raw', stream: stream })
         }
 
-        return bunyan.createLogger({
+        var logger = bunyan.createLogger({
             name: name,
             serializers: bunyan.stdSerializers,
             streams: list})
+        named_loggers[name] = logger
+
+        var fileStreamState = logger.streams.filter(function(s) { return s.type === 'file' })[0].stream._writableState
+
+        stats.define(name+'_logfile_buffer', 'gauge', function() {
+            return fileStreamState.length
+        })
+
+        return logger
     }
 }

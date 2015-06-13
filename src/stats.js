@@ -1,8 +1,5 @@
 var measured = require('measured'),
-    stats = measured.createCollection(),
-    logging = require('./logging')
-
-var logger
+    stats = measured.createCollection()
 
 var self = module.exports = {
     stats: stats,
@@ -19,6 +16,9 @@ var self = module.exports = {
         })
     },
     define: function(name, type, fn) {
+        if (self[name] !== undefined)
+            throw new Error(name +' is already defined in stats')
+
         // fn may be undefined, that's ok
         try {
             self[name] = self.stats[type].call(stats, name, fn)
@@ -36,11 +36,33 @@ var self = module.exports = {
     }
 }
 
-setInterval(function() {
-    // defer creating the logger until someone
-    // configures it
-    if (logger === undefined)
-        logger = logging.create()
 
-    logger.debug({ metrics: stats }, 'metrics')
-}, 1000)
+process.nextTick(function() {
+    var lastRun, logger
+
+    // This fixes the circular dependency between stats and logging
+    logging = require('./logging')
+
+    setInterval(function() {
+        var values = { stats: stats }
+
+        // defer creating the logger until someone
+        // configures it
+        if (!logger)
+            logger = logging.create()
+
+        if (lastRun) {
+            var thisRun = Date.now()
+            values.jitter  = thisRun - lastRun - 1000
+            lastRun = thisRun
+        } else {
+            lastRun = Date.now()
+        }
+
+        if (process && process.memoryUsage)
+            values.memory = process.memoryUsage()
+
+        logger.debug(values, 'metrics')
+    }, 1000)
+
+})
