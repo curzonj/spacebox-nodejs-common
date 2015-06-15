@@ -36,6 +36,12 @@ var jwtVerifyQ = Q.nbind(jwt.verify, jwt);
 
 var self = {
     uuidRe: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+     assertVector: function(v) {
+        if (v === undefined || v === null || isNaN(v.x) || isNaN(v.y) || isNaN(v.z) || Object.keys(v).length !== 3)
+            throw new Error("invalid vector: " + JSON.stringify(v))
+
+        return v
+    },
     assertUUID: function(value) {
         if (typeof value !== 'string' || !self.uuidRe.test(value))
             throw new Error("invalid uuid "+value)

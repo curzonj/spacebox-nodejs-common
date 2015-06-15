@@ -37,6 +37,7 @@ var self = module.exports = {
 }
 
 
+if (process.env.DISABLE_METRICS != '1')
 process.nextTick(function() {
     var lastRun, logger
 

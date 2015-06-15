@@ -17,6 +17,9 @@
     "cors": "latest",
     "node-uuid": "latest"
   },
+  "devDependencies": {
+    "tracing-framework": "latest"
+  },
   "jshintConfig": {
     "node": true,
     "newcap": false,
