@@ -139,10 +139,10 @@ var self = module.exports = {
         if (process.env.FILE_LOG_LEVEL !== undefined)
             file_level = process.env.FILE_LOG_LEVEL
 
-        var list = [
-            { level: file_level, path: path.resolve(__filename, '../../../logs/'+name+'.json') },
-            { level: stdout_level, stream: process.stdout },
-        ]
+        var list = [ { level: stdout_level, stream: process.stdout } ]
+
+        if (file_level !== 'none')
+            list.push({ level: file_level, path: path.resolve(__filename, '../../../logs/'+name+'.json') })
 
         if (process.env.DOCKER_IP !== undefined && process.env.GELF_ENABLED == '1') {
             var gelfStream = require('gelf-stream'),
@@ -157,11 +157,13 @@ var self = module.exports = {
             streams: list})
         named_loggers[name] = logger
 
-        var fileStreamState = logger.streams.filter(function(s) { return s.type === 'file' })[0].stream._writableState
+        if (file_level !== 'none') {
+            var fileStreamState = logger.streams.filter(function(s) { return s.type === 'file' })[0].stream._writableState
 
-        stats.define(name+'_logfile_buffer', 'gauge', function() {
-            return fileStreamState.length
-        })
+            stats.define(name+'_logfile_buffer', 'gauge', function() {
+                return fileStreamState.length
+            })
+        }
 
         return logger
     }
