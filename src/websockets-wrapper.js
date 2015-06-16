@@ -99,8 +99,9 @@ function buildScope() {
     var paths={}
     var handlers = {}
 
-    function websocketUrl(service) {
-        return Q.spread([C.getEndpoints(), C.getAuthToken()], function(endpoints, token) {
+    function websocketUrl(service, overrides) {
+        var logger = C.logging.defaultCtx()
+        return Q.spread([C.getEndpoints(), C.getAuthToken(logger, overrides)], function(endpoints, token) {
             if (endpoints[service] === undefined) {
                 throw new Error(Object.keys(endpoints)+ " is missing "+service)
             }
@@ -116,6 +117,7 @@ function buildScope() {
             }
             new_uri += "//" + loc.host + path + '?token=' + token
 
+            logger.debug({ url: new_uri }, "authenticated, connecting")
             return new_uri
         })
     }
@@ -124,9 +126,9 @@ function buildScope() {
         registerPath: function(service, path) {
             paths[service] = path
         },
-        get: function(service) {
+        get: function(service, overrides) {
             if (handlers[service] === undefined) {
-                var urlq = websocketUrl(service)
+                var urlq = websocketUrl(service, overrides)
                 var h = handlers[service] = new WebsocketWrapper(urlq)
 
                 // This is an async call

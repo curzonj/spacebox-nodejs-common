@@ -121,6 +121,9 @@ var self = module.exports = {
 
         return new Context(bunyan)
     },
+    is_configured: function() {
+        return (!!defaultBunyan)
+    },
     configure: function(name) {
         defaultBunyan = self.buildBunyan(name)
     },

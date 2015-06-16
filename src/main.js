@@ -9,7 +9,7 @@ var Q = require('q'),
 Q.longStackSupport = true
 
 var _endpointCache
-var _authCache
+var _authCache = {}
 
 var config = {}
 
@@ -229,12 +229,14 @@ var self = {
             throw new Error("find failed"+JSON.stringify(cmp))
     },
     deepMerge: require('./deepMerge.js'),
-    request: function (endpoint, method, expects, path, body, ctx) {
+    request: function (endpoint, method, expects, path, body, ctx, overrides) {
         if (ctx === undefined)
             ctx = self.logging.create()
 
-        return Q.spread([self.getEndpoints(), self.getAuthToken()], function(endpoints, token) {
-            ctx.debug({ endpoint: endpoint, method: method, path: path, expects: expects, body: body }, 'making request')
+        ctx.trace({ authCache : _authCache })
+
+        return Q.spread([self.getEndpoints(), self.getAuthToken(ctx, overrides)], function(endpoints, token) {
+            ctx.debug({ endpoint: endpoint, method: method, path: path, expects: expects, body: body, overrides: overrides }, 'making request')
             return qhttp.request({
                 charset: "UTF-8", // This gets aronud a q-io bug with browserify
                 method: method,
@@ -314,47 +316,52 @@ var self = {
         _authCache = auth
     },
 
-    getAuth: function() {
-        if (config.credentials === undefined) {
+    getAuth: function(ctx, overrides) {
+        if (overrides === undefined)
+            overrides = {}
+
+        var credentials = overrides.credentials || config.credentials
+
+        if (credentials === undefined) {
             throw "no credentials have been configured"
+        }
+       
+        var authCache = _authCache[credentials]
+        var now = Math.floor(Date.now() / 1000)
+        if (authCache !== undefined && authCache.expires > now) {
+            return Q(authCache)
         }
 
         return self.getEndpoints().then(function(endpoints) {
-            var now = Math.floor((new Date().getTime()) / 1000)
+            ctx.debug({ credentials: credentials }, 'requesting auth')
+            return qhttp.read({
+                charset: "UTF-8", // This gets aronud a q-io bug with browserify
+                url: endpoints.auth + '/auth?ttl=3600',
+                headers: {
+                    'X-Request-ID': uuidGen.v1(),
+                    "Content-Type": "application/json",
+                    "Authorization": 'Basic ' + new Buffer(credentials).toString('base64')
+                }
+            }).then(function(b) {
+                try {
+                    var value = b.toString()
+                    var decoded = jwt.decode(value)
 
-            if (_authCache !== undefined && _authCache.expires > now) {
-                return _authCache
-            } else {
-                console.log('requesting auth')
-                return qhttp.read({
-                    charset: "UTF-8", // This gets aronud a q-io bug with browserify
-                    url: endpoints.auth + '/auth?ttl=3600',
-                    headers: {
-                        'X-Request-ID': uuidGen.v1(),
-                        "Content-Type": "application/json",
-                        "Authorization": 'Basic ' + new Buffer(config.credentials).toString('base64')
+                    _authCache[credentials] = {
+                        account: decoded.account,
+                        expires: decoded.exp,
+                        token: value
                     }
-                }).then(function(b) {
-                    try {
-                        var value = b.toString()
-                        var decoded = jwt.decode(value)
 
-                        _authCache = {
-                            account: decoded.account,
-                            expires: decoded.exp,
-                            token: value
-                        }
-
-                        return _authCache
-                    } catch(e) {
-                        console.log("invalid authentication data", b)
-                        throw e
-                    }
-                }).fail(function(e) {
-                    console.log("failed to get auth")
+                    return _authCache[credentials]
+                } catch(e) {
+                    console.log("invalid authentication data", b)
                     throw e
-                })
-            }
+                }
+            }).fail(function(e) {
+                console.log("failed to get auth")
+                throw e
+            })
         })
     },
     updateInventory: function(account, data) {
@@ -389,8 +396,8 @@ var self = {
 
         return fn
     }(),
-    getAuthToken: function() {
-        return self.getAuth().then(function(auth) {
+    getAuthToken: function(ctx, overrides) {
+        return self.getAuth(ctx, overrides).then(function(auth) {
             return auth.token
         })
     }
