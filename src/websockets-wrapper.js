@@ -8,8 +8,8 @@ var C = require('./main.js'),
     urlUtil = require("url"),
     events = require('events')
 
-var WebsocketWrapper = function (urlq) {
-    this.logger = C.logging.create()
+var WebsocketWrapper = function (urlq, logger) {
+    this.logger = logger
     this.urlq = urlq
     this.reconnectTimer = null
 }
@@ -95,19 +95,19 @@ C.deepMerge({
     }
 }, WebsocketWrapper.prototype)
 
-function buildScope() {
-    var paths={}
+
+module.exports = function(client) {
+    var logger = client.logger
     var handlers = {}
 
-    function websocketUrl(service, overrides) {
-        var logger = C.logging.defaultCtx()
-        return Q.spread([C.getEndpoints(), C.getAuthToken(logger, overrides)], function(endpoints, token) {
+    function websocketUrl(service) {
+        return Q.spread([client.getEndpoints(), client.getAuthToken()], function(endpoints, token) {
             if (endpoints[service] === undefined) {
                 throw new Error(Object.keys(endpoints)+ " is missing "+service)
             }
 
             var new_uri,
-                path = paths[service] || '/',
+                path = '/',
                 loc = urlUtil.parse(endpoints[service])
 
             if (loc.protocol === "https:") {
@@ -122,23 +122,15 @@ function buildScope() {
         })
     }
 
-    return {
-        registerPath: function(service, path) {
-            paths[service] = path
-        },
-        get: function(service, overrides) {
-            if (handlers[service] === undefined) {
-                var urlq = websocketUrl(service, overrides)
-                var h = handlers[service] = new WebsocketWrapper(urlq)
+    return function(service) {
+        if (handlers[service] === undefined) {
+            var urlq = websocketUrl(service)
+            var h = handlers[service] = new WebsocketWrapper(urlq, logger)
 
-                // This is an async call
-                h.connect()
-            }
+            // This is an async call
+            h.connect()
+        }
 
-            return handlers[service]
-        },
+        return handlers[service]
     }
 }
-
-var defaultScope = module.exports = buildScope()
-defaultScope.customScope = buildScope

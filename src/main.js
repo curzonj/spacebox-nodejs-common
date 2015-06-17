@@ -8,11 +8,6 @@ var Q = require('q'),
 
 Q.longStackSupport = true
 
-var _endpointCache
-var _authCache = {}
-
-var config = {}
-
 function HttpError(statusCode, msgCode, details) {
     Error.captureStackTrace(this, this.constructor)
 
@@ -47,7 +42,6 @@ var self = {
             throw new Error("invalid uuid "+value)
     },
     logging: require('./logging'),
-    stats: require('./stats'),
     http: {
         Error: HttpError,
         errHandler: function(req, res) {
@@ -182,22 +176,8 @@ var self = {
 
         return changes
     },
-
-
-    qCatchOnly: function(c, fn) {
-        return function(e) {
-            if (self.isA(e, c)) {
-                return fn(e)
-            } else {
-                throw e
-            }
-        }
-    },
     isA: function(o, c) {
         return (o.constructor.name == c)
-    },
-    configure: function(h) {
-        self.deepMerge(h, config)
     },
     find: function(hash, cmp, or_fail) {
         if (or_fail ===undefined)
@@ -228,179 +208,7 @@ var self = {
         if (or_fail)
             throw new Error("find failed"+JSON.stringify(cmp))
     },
-    deepMerge: require('./deepMerge.js'),
-    request: function (endpoint, method, expects, path, body, ctx, overrides) {
-        if (ctx === undefined)
-            ctx = self.logging.create()
-
-        ctx.trace({ authCache : _authCache })
-
-        return Q.spread([self.getEndpoints(), self.getAuthToken(ctx, overrides)], function(endpoints, token) {
-            ctx.debug({ endpoint: endpoint, method: method, path: path, expects: expects, body: body, overrides: overrides }, 'making request')
-            return qhttp.request({
-                charset: "UTF-8", // This gets aronud a q-io bug with browserify
-                method: method,
-                url: endpoints[endpoint] + path,
-                headers: {
-                    'X-Request-ID': uuidGen.v1(),
-                    "Authorization": "Bearer " + token,
-                    "Content-Type": "application/json"
-                },
-                body: ( (body === undefined || method == "GET") ? [] : [JSON.stringify(body)])
-            }).then(function(resp) {
-                if (resp.status !== expects) {
-                    return resp.body.read().then(function(b) {
-                        ctx.debug(endpoint+" " + resp.status + " reason: " + b.toString())
-
-                        var code, details
-
-                        try {
-                            var body = JSON.parse(b.toString())
-                            details = body.errorDetails
-                            code = body.errorCode
-                        } catch(e) {
-                            details = b.toString()
-                            code = 'unknown'
-                        }
-
-                        var err = new self.http.Error(resp.status, code, details)
-                        err.request_id = resp.headers['x-request-id']
-                        err.request_method = method
-                        err.request_service = endpoint
-                        err.request_path = path
-
-                        throw err
-                    })
-                } else {
-                    if (resp.status !== 204) {
-                        return resp.body.read().then(function(b) {
-                            try {
-                                return JSON.parse(b.toString())
-                            } catch(e) {
-                                console.log('invalid json from %s: `%s`', endpoint, b.toString())
-                                return b
-                            }
-                        })
-                    }
-                }
-            })
-        })
-    },
-
-    getEndpoints: function() {
-        return Q.fcall(function() {
-            if (_endpointCache !== undefined) {
-                return _endpointCache
-            } else {
-                console.log('requesting endpoints')
-                return qhttp.read({
-                    charset: "UTF-8", // This gets aronud a q-io bug with browserify
-                    url: config.AUTH_URL + '/endpoints',
-                    headers: {
-                        'X-Request-ID': uuidGen.v1(),
-                        "Content-Type": "application/json",
-                    }
-                }).then(function(b) {
-                    _endpointCache = JSON.parse(b.toString())
-                    return _endpointCache
-                }).fail(function(e) {
-                    console.log("failed to fetch the endpoints")
-                    throw e
-                })
-            }
-        })
-    },
-
-    // This is only used in some cases like temp accounts
-    setAuth: function(auth) {
-        _authCache = auth
-    },
-
-    getAuth: function(ctx, overrides) {
-        if (overrides === undefined)
-            overrides = {}
-
-        var credentials = overrides.credentials || config.credentials
-
-        if (credentials === undefined) {
-            throw "no credentials have been configured"
-        }
-       
-        var authCache = _authCache[credentials]
-        var now = Math.floor(Date.now() / 1000)
-        if (authCache !== undefined && authCache.expires > now) {
-            return Q(authCache)
-        }
-
-        return self.getEndpoints().then(function(endpoints) {
-            ctx.debug({ credentials: credentials }, 'requesting auth')
-            return qhttp.read({
-                charset: "UTF-8", // This gets aronud a q-io bug with browserify
-                url: endpoints.auth + '/auth?ttl=3600',
-                headers: {
-                    'X-Request-ID': uuidGen.v1(),
-                    "Content-Type": "application/json",
-                    "Authorization": 'Basic ' + new Buffer(credentials).toString('base64')
-                }
-            }).then(function(b) {
-                try {
-                    var value = b.toString()
-                    var decoded = jwt.decode(value)
-
-                    _authCache[credentials] = {
-                        account: decoded.account,
-                        expires: decoded.exp,
-                        token: value
-                    }
-
-                    return _authCache[credentials]
-                } catch(e) {
-                    console.log("invalid authentication data", b)
-                    throw e
-                }
-            }).fail(function(e) {
-                console.log("failed to get auth")
-                throw e
-            })
-        })
-    },
-    updateInventory: function(account, data) {
-        /* data = [{
-            inventory: uuid,
-            slice: slice,
-            blueprint: type,
-            quantity: quantity
-        }]
-        */
-        return self.request("api", "POST", 204, "/inventory", data, { sudo_account: account })
-    },
-    getBlueprint: function() {
-        var _cache = {}
-
-        var fn = function(uuid) {
-            return Q.fcall(function() {
-                if (_cache[uuid] !== undefined) {
-                    return _cache[uuid]
-                } else {
-                    return self.request('api', 'GET', 200, '/blueprints/'+uuid).
-                    tap(function(data) {
-                        _cache[uuid] = data
-                    })
-                }
-            })
-        }
-
-        fn.reset = function() {
-            _cache = {}
-        }
-
-        return fn
-    }(),
-    getAuthToken: function(ctx, overrides) {
-        return self.getAuth(ctx, overrides).then(function(auth) {
-            return auth.token
-        })
-    }
+    deepMerge: require('./deepMerge.js')
 }
 
 module.exports = self

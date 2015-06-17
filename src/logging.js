@@ -1,27 +1,123 @@
 'use strict';
 
-var deepMerge = require('./deepMerge'),
-    stats = require('./stats'),
-    path = require('path'),
-    bunyan = require('bunyan'),
-    uuidGen = require('node-uuid')
+var deepMerge = require('./deepMerge')
+var path = require('path')
+var bunyan = require('bunyan')
+var uuidGen = require('node-uuid')
+var measured = require('measured')
+
+
+function scheduleStatsLogging(ctx) {
+    if (process.env.DISABLE_METRICS === '1')
+        return
+
+    var lastRun
+
+    setInterval(function() {
+        var values = { stats: ctx.stats }
+
+        if (lastRun) {
+            var thisRun = Date.now()
+            values.jitter  = thisRun - lastRun - 1000
+            lastRun = thisRun
+        } else {
+            lastRun = Date.now()
+        }
+
+        if (process && process.memoryUsage)
+            values.memory = process.memoryUsage()
+
+        // TODO we need other ways of delivering
+        // metrics
+        ctx.debug(values, 'metrics')
+    }, 1000)
+}
 
 function Context(bunyan, parent) {
     this.prefix = [ ]
     this.limited_prefixes = {}
-    this.logger = bunyan
 
-    if (bunyan === undefined)
-        throw new Error("you must pass in a logger")
-
-    if (parent !== undefined)
+    if (parent === undefined) {
+        this.stats = measured.createCollection()
+        this.buildBunyan(bunyan)
+        scheduleStatsLogging(this)
+    } else {
+        this.logger = bunyan
+        this.stats = parent.stats
         this.extend(parent)
+    }
+
+    if (this.logger === undefined)
+        throw new Error("problem creating logging context")
 }
 
-var defaultBunyan, defaultContext,
-    debug_scopes = process.env.MYDEBUG || ''
-
 deepMerge({
+    buildBunyan: function(name) {
+        var stdout_level = 'info'
+        if (process.env.STDOUT_LOG_LEVEL !== undefined)
+            stdout_level = process.env.STDOUT_LOG_LEVEL
+
+        var file_level = 'debug'
+        if (process.env.FILE_LOG_LEVEL !== undefined)
+            file_level = process.env.FILE_LOG_LEVEL
+
+        var list = [ { level: stdout_level, stream: process.stdout } ]
+
+        if (file_level !== 'none')
+            list.push({ level: file_level, path: path.resolve(__filename, '../../../logs/'+name+'.json') })
+
+        if (process.env.DOCKER_IP !== undefined && process.env.GELF_ENABLED == '1') {
+            var gelfStream = require('gelf-stream'),
+                stream = gelfStream.forBunyan(process.env.DOCKER_IP, 12201)
+
+            list.push({ level: 'debug', type: 'raw', stream: stream })
+        }
+
+        var logger = bunyan.createLogger({
+            name: name,
+            serializers: bunyan.stdSerializers,
+            streams: list})
+
+        if (file_level !== 'none') {
+            var fileStreamState = logger.streams.filter(function(s) { return s.type === 'file' })[0].stream._writableState
+
+            this.measure('logfile_buffer', 'gauge', function() {
+                return fileStreamState.length
+            })
+        }
+
+        this.logger = logger
+    },
+    child: function() {
+        return new Context(this.logger.child.apply(this.logger, arguments), this)
+    },
+    measure: function(set_or_name, type, fn) {
+        var self = this
+
+        function define(name, type, fn) {
+            if (self[name] !== undefined)
+                throw new Error(name +' is already defined in stats')
+
+            // fn may be undefined, that's ok
+            try {
+                self[name] = self.stats[type].call(self.stats, name, fn)
+            } catch(e) {
+                console.log(name, type, fn)
+                console.log(e)
+
+                throw e
+            }
+        }
+
+        if (typeof set_or_name === 'string') {
+            define(set_or_name, type, fn)
+        } else {
+            for(var n in set_or_name) {
+                define(n, set_or_name[n])
+            }
+        }
+    },
+
     extend: function(parent) {
         this.prefix = parent.prefix.slice()
         Object.keys(parent.limited_prefixes).forEach(function(k) {
@@ -40,16 +136,9 @@ deepMerge({
             name = args.splice(0, 1)[0],
             other = this.limited_prefixes[name] || ''
 
-        if (debug_scopes.indexOf(name) > -1 || debug_scopes.indexOf('*') > -1) 
-            this.logger.debug([ name ].concat(this.prefix, other, args).join(' '))
+        this.logger.debug([ name ].concat(this.prefix, other, args).join(' '))
     },
-    child: function() {
-        return new Context(this.logger.child.apply(this.logger, arguments), this)
-    },
-    old_log_with: function() {
-        return this.log_with.apply(this, arguments)
-    },
-    log_with: function(fn, parts, scope) {
+    old_log_with: function(fn, parts, scope) {
         var ctx = new Context(this.logger, this)
         if (scope === undefined) {
             ctx.prefix = ctx.prefix.concat(parts)
@@ -61,9 +150,6 @@ deepMerge({
 
         return fn(ctx)
     },
-    getBunyan: function() {
-        return this.logger
-    }
 }, Context.prototype);
 
 [ 'fatal', 'error', 'warn', 'info', 'debug', 'trace' ].forEach(function(name) {
@@ -72,9 +158,7 @@ deepMerge({
     }
 })
 
-var named_loggers = {}
-
-var self = module.exports = {
+module.exports = {
     trace: function(fn_name, fn) {
         // TODO add `measured` stats to this
         return function(ctx) {
@@ -103,68 +187,7 @@ var self = module.exports = {
             }
         }
     },
-    defaultCtx: function() {
-        if (defaultContext === undefined)
-            defaultContext = self.create()
-
-        return defaultContext
+    create: function(name) {
+        return new Context(name)
     },
-    create: function(bunyan) {
-        if (typeof bunyan === 'string')
-            throw new Error("the logging.create api has changed")
-
-        if (bunyan === undefined)
-            bunyan = defaultBunyan
-
-        if (bunyan === undefined)
-            throw new Error("C.logging is not configured yet")
-
-        return new Context(bunyan)
-    },
-    is_configured: function() {
-        return (!!defaultBunyan)
-    },
-    configure: function(name) {
-        defaultBunyan = self.buildBunyan(name)
-    },
-    buildBunyan: function(name) {
-        if (named_loggers[name])
-            return named_loggers[name]
-
-        var stdout_level = 'info'
-        if (process.env.STDOUT_LOG_LEVEL !== undefined)
-            stdout_level = process.env.STDOUT_LOG_LEVEL
-
-        var file_level = 'debug'
-        if (process.env.FILE_LOG_LEVEL !== undefined)
-            file_level = process.env.FILE_LOG_LEVEL
-
-        var list = [ { level: stdout_level, stream: process.stdout } ]
-
-        if (file_level !== 'none')
-            list.push({ level: file_level, path: path.resolve(__filename, '../../../logs/'+name+'.json') })
-
-        if (process.env.DOCKER_IP !== undefined && process.env.GELF_ENABLED == '1') {
-            var gelfStream = require('gelf-stream'),
-                stream = gelfStream.forBunyan(process.env.DOCKER_IP, 12201)
-
-            list.push({ level: 'debug', type: 'raw', stream: stream })
-        }
-
-        var logger = bunyan.createLogger({
-            name: name,
-            serializers: bunyan.stdSerializers,
-            streams: list})
-        named_loggers[name] = logger
-
-        if (file_level !== 'none') {
-            var fileStreamState = logger.streams.filter(function(s) { return s.type === 'file' })[0].stream._writableState
-
-            stats.define(name+'_logfile_buffer', 'gauge', function() {
-                return fileStreamState.length
-            })
-        }
-
-        return logger
-    }
 }
