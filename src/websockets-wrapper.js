@@ -58,11 +58,29 @@ C.deepMerge({
             self.connection = conn
         }).done()
     },
+    scheduleKeepAlive: function() {
+        var self = this
+
+        if (self.keepAliveInterval)
+            return 
+
+        self.keepAliveInterval = setInterval(function() {
+            self.cmd("ping")
+        }, 20000)
+    },
+    cancelKeepAlive: function() {
+        clearInterval(this.keepAliveInterval)
+        delete this.keepAliveInterval
+    },
     _onopen: function() {
+        this.scheduleKeepAlive()
+
         this.emit('open', this.connection)
     },
 
     _onclose: function(e) {
+        this.cancelKeepAlive()
+
         this.emit('close', e, this.connection)
         this._reconnect();
     },
@@ -82,6 +100,7 @@ C.deepMerge({
     },
     _onerror: function(error) {
         this.logger.debug({ err: error }, 'WebSocket Error')
+        this.cancelKeepAlive()
 
         // Don't emit undhandled error events
         if (this.listeners('error').length > 0) {
