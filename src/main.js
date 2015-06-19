@@ -93,7 +93,10 @@ var self = {
                 })
             }
 
-            return self.http.authorize_token(parts[1], restricted)
+            return self.http.authorize_token(parts[1], restricted).
+            tap(function(auth) {
+                req.ctx.trace({ auth: auth }, 'authorization')
+            })
         },
         authorize_token: function(token, restricted) {
             return jwtVerifyQ(token, process.env.JWT_VERIFY_KEY).then(function(authorization) {

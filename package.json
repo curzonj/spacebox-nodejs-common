@@ -10,7 +10,6 @@
     "bunyan": "latest",
     "measured": "latest",
     "gelf-stream": "curzonj/gelf-stream",
-    "ws": "latest",
     "q": "~1.3.0",
     "q-io": "~1.12.0",
     "jsonwebtoken": "latest",
