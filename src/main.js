@@ -211,6 +211,15 @@ var self = {
         if (or_fail)
             throw new Error("find failed"+JSON.stringify(cmp))
     },
+    qAppend: function(fn) {
+        return  function() {
+            var args = Array.prototype.slice.call(arguments)
+            return fn.apply(null, arguments).then(function(result) {
+                args.push(result)
+                return args
+            })
+        }
+    },
     deepMerge: require('./deepMerge.js')
 }
 
