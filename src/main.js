@@ -55,12 +55,14 @@ var self = {
                 req.ctx.error({ err: err }, 'http request server error')
 
                 if (self.isA(err, "HttpError")) {
-                    res.status(err.status).send({
+                    res.status(err.status).json({
                         errorCode: err.msgCode,
                         errorDetails: err.details
                     })
                 } else {
-                    res.status(500).send(err.toString())
+                    res.status(500).json({
+                        errorDetails: err.toString()
+                    })
                 }
             }
         },
