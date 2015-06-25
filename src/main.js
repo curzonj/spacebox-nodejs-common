@@ -77,38 +77,31 @@ var self = {
             app.use(cors)
             app.options("*", cors)
         },
-        authorize_req: function (req, restricted) {
+        authorize_req: function (req) {
             var auth_header = req.headers.authorization
 
             if (auth_header === undefined) {
                 // We do this so that the Q-promise error handling
                 // will catch it
                 return Q.fcall(function() {
-                    throw new Error("not authorized missing header")
+                    throw new Error("not authorized, missing header")
                 })
             }
 
             var parts = auth_header.split(' ')
             if (parts[0] != "Bearer") {
                 return Q.fcall(function() {
-                    throw new Error("not authorized missing bearer")
+                    throw new Error("not authorized, missing bearer")
                 })
             }
 
-            return self.http.authorize_token(parts[1], restricted).
+            return self.http.authorize_token(parts[1]).
             tap(function(auth) {
                 req.ctx.trace({ auth: auth }, 'authorization')
             })
         },
-        authorize_token: function(token, restricted) {
-            return jwtVerifyQ(token, process.env.JWT_VERIFY_KEY).then(function(authorization) {
-                if ((restricted === true || restricted == 'true') &&
-                    authorization.privileged !== true) {
-                    throw new Error("rejected for restricted endpoint: "+authorization.account)
-                }
-
-                return authorization
-            })
+        authorize_token: function(token) {
+            return jwtVerifyQ(token, process.env.JWT_VERIFY_KEY)
         }
     },
 
@@ -183,6 +176,19 @@ var self = {
     },
     isA: function(o, c) {
         return (o.constructor.name == c)
+    },
+    valuesArray: function(obj) {
+        return Object.keys(obj).
+        map(function(k) {
+            return obj[k]
+        })
+    },
+    randomArrayValue: function(array) {
+        var slot = self.randomInt(1, array.length)
+        return array(slot-1)
+    },
+    randomInt: function( min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
     },
     find: function(hash, cmp, or_fail) {
         if (or_fail ===undefined)
