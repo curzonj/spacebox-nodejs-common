@@ -40,6 +40,8 @@ var self = {
     assertUUID: function(value) {
         if (typeof value !== 'string' || !self.uuidRe.test(value))
             throw new Error("invalid uuid "+value)
+
+        return value
     },
     logging: require('./logging'),
     http: {
